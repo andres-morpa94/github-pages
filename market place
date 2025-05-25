@@ -1,0 +1,89 @@
+# Crear página frontend de pago con Stripe y PayPal
+
+payment_page_code = """import { useEffect, useState } from 'react'
+import { loadStripe } from '@stripe/stripe-js'
+
+const stripePromise = loadStripe('pk_test_XXXXXXXXXXXXXXXXXXXXXXXX') // Reemplazar por tu clave pública
+
+const Checkout = () => {
+  const [cart, setCart] = useState({ items: [] })
+
+  useEffect(() => {
+    const fetchCart = async () => {
+      const res = await fetch(import.meta.env.VITE_API_URL + '/cart', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      })
+      const data = await res.json()
+      setCart(data)
+    }
+    fetchCart()
+  }, [])
+
+  const payWithStripe = async () => {
+    const stripe = await stripePromise
+    const res = await fetch(import.meta.env.VITE_API_URL + '/pay/stripe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ items: cart.items })
+    })
+    const data = await res.json()
+    stripe.redirectToCheckout({ sessionId: data.id })
+  }
+
+  const payWithPayPal = async () => {
+    const res = await fetch(import.meta.env.VITE_API_URL + '/pay/paypal', {
+      method: 'POST'
+    })
+    const data = await res.json()
+    window.location.href = data.links.find(link => link.rel === 'approve').href
+  }
+
+  return (
+    <div className="p-4">
+      <h2 className="text-xl font-bold">Resumen de pago</h2>
+      <ul className="my-4">
+        {cart.items.map((item, idx) => (
+          <li key={idx}>Producto: {item.productId}, Cantidad: {item.quantity}</li>
+        ))}
+      </ul>
+      <div className="space-x-4">
+        <button onClick={payWithStripe} className="bg-purple-600 text-white px-4 py-2 rounded">
+          Pagar con Stripe
+        </button>
+        <button onClick={payWithPayPal} className="bg-yellow-500 text-black px-4 py-2 rounded">
+          Pagar con PayPal
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default Checkout
+"""
+
+# Guardar archivo en el frontend
+checkout_path = project_root / "src/pages/Checkout.jsx"
+checkout_path.write_text(payment_page_code)
+
+# Agregar ruta en App.jsx
+app_file = project_root / "src/App.jsx"
+app_text = app_file.read_text()
+if 'Checkout' not in app_text:
+    app_text = app_text.replace(
+        "import AdminOrders from './pages/AdminOrders'",
+        "import AdminOrders from './pages/AdminOrders'\nimport Checkout from './pages/Checkout'"
+    ).replace(
+        "</Routes>",
+        '  <Route path="/checkout" element={<Checkout />} />\n</Routes>'
+    )
+    app_file.write_text(app_text)
+
+# Actualizar zip
+frontend_zip_path = Path("/mnt/data/marketplace-frontend-payments.zip")
+with zipfile.ZipFile(frontend_zip_path, 'w') as zipf:
+    for file in project_root.rglob("*"):
+        zipf.write(file, arcname=file.relative_to(project_root))
+
+frontend_zip_path.name
